@@ -57,13 +57,14 @@ jobs:
         run: |
           sed -i '' '/^      - target: NOOPWatch$/d' project.yml
 
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # After xcodegen: it rewrites Info.plist from project.yml, dropping earlier edits.
       - name: Skip the export-compliance prompt on every upload
         run: |
           /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" StrandiOS/Resources/Info.plist \
             || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" StrandiOS/Resources/Info.plist
-
-      - name: Generate Xcode project
-        run: xcodegen generate
 
       - name: Write API key
         env:
