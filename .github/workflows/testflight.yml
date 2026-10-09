@@ -13,6 +13,10 @@ on:
         description: "Include the Apple Watch app"
         type: boolean
         default: false
+      xcode_version:
+        description: "Xcode version on the runner (for example 26.5)"
+        type: string
+        default: "26.5"
 
 jobs:
   testflight:
@@ -24,6 +28,13 @@ jobs:
       BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Select Xcode
+        env:
+          XCODE_VERSION: ${{ inputs.xcode_version || '26.5' }}
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
