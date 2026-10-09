@@ -1,0 +1,96 @@
+# Builds Zhoop on a GitHub-hosted Mac, signs it with the Apple Developer account,
+# and uploads it to TestFlight. Run from Actions: "Zhoop TestFlight" > Run workflow.
+#
+# Required repo secrets:
+#   BUNDLE_ID_PREFIX, TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8
+
+name: Zhoop TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_watch:
+        description: "Include the Apple Watch app"
+        type: boolean
+        default: false
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 75
+    env:
+      KEY_PATH: ${{ github.workspace }}/../AuthKey.p8
+      ARCHIVE: ${{ github.workspace }}/../Zhoop.xcarchive
+      EXPORT_DIR: ${{ github.workspace }}/../export
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Write signing config
+        run: |
+          cat > Config/BundleIdSecrets.xcconfig <<EOF
+          BUNDLE_ID_PREFIX = ${{ secrets.BUNDLE_ID_PREFIX }}
+          DEVELOPMENT_TEAM = ${{ secrets.TEAM_ID }}
+          EOF
+
+      - name: Drop the Watch app (unless requested)
+        if: ${{ !inputs.include_watch }}
+        run: |
+          sed -i '' '/^      - target: NOOPWatch$/d' project.yml
+
+      - name: Skip the export-compliance prompt on every upload
+        run: |
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" StrandiOS/Resources/Info.plist \
+            || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" StrandiOS/Resources/Info.plist
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Write API key
+        run: printf '%s' "${{ secrets.ASC_KEY_P8 }}" > "$KEY_PATH"
+
+      - name: Archive (Xcode cloud-managed signing)
+        run: |
+          xcodebuild archive \
+            -project Strand.xcodeproj \
+            -scheme NOOPiOS \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+
+      - name: Export and upload to TestFlight
+        run: |
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${{ secrets.TEAM_ID }}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "$EXPORT_DIR" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}"
+
+      - name: Clean up key
+        if: always()
+        run: rm -f "$KEY_PATH"
