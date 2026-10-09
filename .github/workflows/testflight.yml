@@ -1,5 +1,7 @@
 # Builds Zhoop on a GitHub-hosted Mac, signs it with the Apple Developer account,
 # and uploads it to TestFlight. Run from Actions: "Zhoop TestFlight" > Run workflow.
+# Also runs on the 1st of every month so a fresh build replaces the old one well
+# before TestFlight's 90-day expiry.
 #
 # Required repo secrets:
 #   BUNDLE_ID_PREFIX, TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8
@@ -7,6 +9,8 @@
 name: Zhoop TestFlight
 
 on:
+  schedule:
+    - cron: "17 9 1 * *"
   workflow_dispatch:
     inputs:
       include_watch:
@@ -22,6 +26,8 @@ jobs:
   testflight:
     runs-on: macos-26
     timeout-minutes: 75
+    permissions:
+      contents: write
     env:
       ARCHIVE: ${{ github.workspace }}/../Zhoop.xcarchive
       EXPORT_DIR: ${{ github.workspace }}/../export
@@ -130,6 +136,17 @@ jobs:
             -authenticationKeyPath "$KEY_PATH" \
             -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}"
+
+      # GitHub disables scheduled workflows in public repos after 60 days without a commit,
+      # so each scheduled build leaves an empty commit behind to keep the schedule alive.
+      - name: Keep the monthly schedule alive
+        if: github.event_name == 'schedule'
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "Monthly TestFlight build ${{ github.run_number }}"
+          git push
 
       - name: Clean up key
         if: always()
