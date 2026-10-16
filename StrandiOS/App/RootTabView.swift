@@ -129,24 +129,12 @@ struct RootTabView: View {
             tab(todayTabRoot, "Today", "square.grid.2x2", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
             tab(TrendsView(), "Trends", "chart.line.uptrend.xyaxis", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
             tab(SleepView(), "Sleep", "bed.double", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
-            // K3: Coach promoted to a top-level tab (was behind the More list). The sparkles icon
-            // matches the More-tab row and the macOS sidebar entry.
-            // Conditional on the master switch. The tags stay LITERAL rather than being renumbered when
-            // Coach is absent: `tabPaths` and `scrollTop` are indexed by tag, and More stays tag 4 in both
-            // shapes, so a wearer's More tab keeps its identity, its navigation path and its scroll
-            // position across a flip instead of inheriting Coach's.
-            if coachEnabled {
-                tab(CoachView(), "Coach", "sparkles", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
-            }
+            // This build: Activity (the Workouts screen) holds tag 3 in place of Coach, so the day's
+            // sessions are one tap away. Coach moves back under More (shown only while its switch is on).
+            tab(WorkoutsView(), "Activity", "figure.run", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
             moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
         }
         .tint(StrandPalette.accent)
-        // Switching Coach off while STANDING on it leaves `selectedTab` pointing at a tag no tab claims
-        // any more, which renders as an empty tab rather than as an error. Send that wearer to Today, and
-        // only in that case, so a flip made from anywhere else does not move them.
-        .onChangeCompat(of: coachEnabled) { enabled in
-            if !enabled && selectedTab == 3 { selectedTab = 0 }
-        }
         // #1841: the same "Hide bar when scrolling" preference Android drives its own bar with. Here the
         // system owns the behaviour — iOS 26's tab bar MINIMISES to a pill on scroll down rather than
         // sliding away entirely, so this is the platform's read of the same intent, not a copy of ours.
@@ -211,19 +199,11 @@ struct RootTabView: View {
                 routedPillar = dest
                 router.requestedDestination = nil
             case .coach:
-                // K3: Coach is now a top-level tab (tag 3) — switch to it directly instead of
-                // presenting it as a pillar sheet.
-                //
-                // Guarded on the master switch, because this route is reachable with Coach OFF. A brief
-                // notification already sitting in Notification Centre still calls `openCoach()` when it is
-                // tapped (StrandApp wires `onCoachBriefTapped` to it), and with no tab claiming tag 3 the
-                // wearer would land on a BLANK tab. Dropping the request leaves them where they were, which
-                // is the honest answer for a feature that is switched off.
-                guard coachEnabled else {
-                    router.requestedDestination = nil
-                    break
-                }
-                withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = 3 }
+                // Coach no longer has a tab in this build (Activity holds tag 3), so it opens in the shared
+                // pillar sheet. Guarded on the master switch: a brief notification already sitting in
+                // Notification Centre still calls `openCoach()` when tapped, and a feature that is switched
+                // off should leave the wearer where they were.
+                if coachEnabled { routedPillar = dest }
                 router.requestedDestination = nil
             case .trends:
                 // Trends is a primary tab on iPhone (not a pillar sheet) — switch to it.
@@ -334,10 +314,9 @@ struct RootTabView: View {
                 // .journal opens through the quick-action Journal sheet (handled above); this keeps the
                 // switch exhaustive and falls back to the journal's Insights host if it ever reaches here.
                 case .journal: InsightsView()
-                // .coach switches to the Coach tab (handled above — the morning-brief tap-through and the
-                // #1862 launcher both arrive that way, the launcher's question riding on
-                // `AICoachEngine.pendingPrompt`); this keeps the switch exhaustive and falls back to Coach if
-                // it ever reaches the host.
+                // .coach lands here in this build (Activity took its tab): the morning-brief tap-through and
+                // the #1862 launcher both arrive this way, the launcher's question riding on
+                // `AICoachEngine.pendingPrompt`.
                 case .coach: CoachView()
                 case .alarms: SmartAlarmView()
                 }
@@ -466,14 +445,16 @@ struct RootTabView: View {
                 moreSection("Insights") {
                     MoreRow("What Moves You", "wand.and.sparkles", .insightsHub)
                     MoreRow("Intelligence", "brain.head.profile", .intelligence)
-                    // K3: Coach promoted to a top-level tab — no longer listed under More.
+                    // Coach's tab went to Activity in this build, so it lives here while switched on.
+                    if coachEnabled {
+                        MoreRow("Coach", "sparkles", .coach)
+                    }
                     MoreRow("Insights", "lightbulb.fill", .insights)
                     MoreRow("Explore", "square.grid.2x2.fill", .explore)
                     MoreRow("Compare", "rectangle.split.2x1.fill", .compare)
                 }
                 moreSection("Body") {
                     MoreRow("Live", "waveform.path.ecg", .live)
-                    MoreRow("Workouts", "figure.run", .workouts)
                     MoreRow("Lift Log", "dumbbell.fill", .liftLog)
                     MoreRow("Health", "heart.text.square.fill", .health)
                     MoreRow("Lab Book", "books.vertical.fill", .labBook)
